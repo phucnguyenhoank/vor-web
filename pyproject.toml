@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "distil-whisper-fastrtc>=0.1.0.post1",
+    "fastapi[standard]>=0.116.1",
     "fastrtc[stt,tts,vad]>=0.0.30",
     "ollama>=0.5.3",
     "torchaudio>=2.8.0",
