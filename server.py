@@ -1,3 +1,25 @@
+# -----------SSL--------------------
+import ssl
+import urllib3
+import requests.sessions
+import requests
+# --- Disable SSL Verification ---
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ 
+old_request = requests.sessions.Session.request
+def unsafe_request(self, *args, **kwargs):
+    kwargs['verify'] = False
+    return old_request(self, *args, **kwargs)
+requests.sessions.Session.request = unsafe_request
+ 
+from requests.sessions import Session as OriginalSession
+class UnsafeSession(OriginalSession):
+    def request(self, *args, **kwargs):
+        kwargs['verify'] = False
+        return super().request(*args, **kwargs)
+requests.Session = UnsafeSession
+
+# ------------SSL--------------
 import json
 import os
 import time
@@ -15,17 +37,25 @@ from fastrtc import (
     get_tts_model,
     get_twilio_turn_credentials,
     get_stt_model,
+    AlgoOptions, 
+    SileroVadOptions,
 )
 from fastrtc.utils import audio_to_bytes
 from gradio.utils import get_space
 from ollama import chat
 from pydantic import BaseModel
+from distil_whisper_fastrtc import DistilWhisperSTT # , get_stt_model
 
 load_dotenv()
 curr_dir = Path(__file__).parent
 
-tts_model = get_tts_model()
+tts_model = get_tts_model(device="cuda", dtype="float16")
+
 stt_model = get_stt_model()
+
+def startup():
+    for chunk in tts_model.stream_tts_sync("Welcome! Thanks for choosing us. What would you like to eat today!"):
+        yield chunk
 
 def response(
     audio: tuple[int, np.ndarray],
@@ -35,6 +65,7 @@ def response(
     messages = [{"role": d["role"], "content": d["content"]} for d in chatbot]
 
     prompt = stt_model.stt(audio)
+    print(f'user>:{prompt}')
     if not prompt:
         return
 
@@ -43,24 +74,45 @@ def response(
     messages.append({"role": "user", "content": prompt})
 
     resp = chat(model="llama3.2:1b", messages=messages)
-    response_text = resp["message"]["content"]
+    # Nanoseconds
+    total_ns = resp.get("total_duration")
+    eval_ns = resp.get("eval_duration")
 
+    # Convert to seconds
+    total_s = total_ns / 1e9 if total_ns is not None else None
+    eval_s = eval_ns / 1e9 if eval_ns is not None else None
+    
+    print(f"Inference (eval) duration: {eval_s:.3f} s")
+    print(f"Total duration: {total_s:.3f} s")
+
+    response_text = resp["message"]["content"]
+    print(f'assistant>:{response_text}')
     chatbot.append({"role": "assistant", "content": response_text})
 
     start = time.time()
-
-    print("starting tts", start)
     for i, chunk in enumerate(tts_model.stream_tts_sync(response_text)):
         print("chunk", i, time.time() - start)
         yield chunk
-    print("finished tts", time.time() - start)
+    total_time = round(time.time() - start, 2)
+    print(f"finished tts: {total_time} sec total")
     yield AdditionalOutputs(chatbot)
 
 chatbot = gr.Chatbot(type="messages")
 stream = Stream(
     modality="audio",
     mode="send-receive",
-    handler=ReplyOnPause(response),
+    handler=ReplyOnPause(response,
+        startup_fn=startup,
+        algo_options=AlgoOptions(
+            audio_chunk_duration=0.6,        # process 0.6s audio chunks
+            started_talking_threshold=0.35,   # require louder start to detect speech
+            speech_threshold=0.1              # overall speech confidence threshold
+        ),
+        model_options=SileroVadOptions(
+            threshold=0.65,                   # VAD activation threshold <= .65
+            min_speech_duration_ms=500,      # ignore speech shorter than 250ms
+            min_silence_duration_ms=500      # need at least 500ms silence to stop
+        )),
     additional_outputs_handler=lambda a, b: b,
     additional_inputs=[chatbot],
     additional_outputs=[chatbot],
