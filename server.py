@@ -1,3 +1,25 @@
+# -----------SSL--------------------
+import ssl
+import urllib3
+import requests.sessions
+import requests
+# --- Disable SSL Verification ---
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ 
+old_request = requests.sessions.Session.request
+def unsafe_request(self, *args, **kwargs):
+    kwargs['verify'] = False
+    return old_request(self, *args, **kwargs)
+requests.sessions.Session.request = unsafe_request
+ 
+from requests.sessions import Session as OriginalSession
+class UnsafeSession(OriginalSession):
+    def request(self, *args, **kwargs):
+        kwargs['verify'] = False
+        return super().request(*args, **kwargs)
+requests.Session = UnsafeSession
+
+# ------------SSL--------------
 import json
 import os
 import time
@@ -233,7 +255,8 @@ def response(
     for i, chunk in enumerate(tts_model.stream_tts_sync(response_text)):
         print("chunk", i, time.time() - start)
         yield chunk
-    print("finished tts", time.time() - start)
+    total_time = round(time.time() - start, 2)
+    print(f"finished tts: {total_time} sec total")
     yield AdditionalOutputs(chatbot)
 
 chatbot = gr.Chatbot(type="messages")
