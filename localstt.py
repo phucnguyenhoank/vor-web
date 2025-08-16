@@ -22,20 +22,18 @@ class LocalFasterWhisperSTT(STTModel):
             raise RuntimeError(f"Error loading faster-whisper model: {e}")
 
     def stt(self, audio: tuple[int, NDArray[np.int16 | np.float32]]) -> str:
-        sr, audio_np = audio  # type: ignore
+        sr, audio_np = audio  # sr is 48000, audio_np is shape (1, N), dtype=int16
 
-        # Convert to float32
-        if audio_np.dtype != np.float32:
-            audio_np = audio_np.astype(np.float32)
+        # Convert int16 to float32 and normalize to [-1, 1]
+        audio_np = audio_np.astype(np.float32) / 32768.0
 
-        # Resample if needed
-        if sr != 16000:
-            audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=16000)
+        # Convert shape (1, N) to (N,) for mono
+        audio_np = audio_np[0]
 
-        # Whisper expects 1D array
-        if audio_np.ndim > 1:
-            audio_np = audio_np.flatten()
+        # Resample from 48 kHz to 16 kHz
+        audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=16000)
 
+        # Transcribe with faster-whisper
         segments, _ = self.model.transcribe(audio_np, beam_size=5, language="en")
         return " ".join(seg.text for seg in segments)
 
@@ -50,9 +48,9 @@ def get_stt_model(
     m = LocalFasterWhisperSTT(model_path, device, compute_type)
 
     # Warm-up with 1 second of silence
-    dummy_audio = np.zeros(16000, dtype=np.float32)
+    dummy_audio = np.zeros((1, 48000), dtype=np.int16) # raw audio
     print(click.style("INFO", fg="green") + ":\t  Warming up STT model.")
-    m.stt((16000, dummy_audio))
+    m.stt((48000, dummy_audio))
     print(click.style("INFO", fg="green") + ":\t  STT model warmed up.")
     return m
 
