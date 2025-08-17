@@ -152,10 +152,6 @@
           try {
             const j = JSON.parse(ev.data);
             if (j.type === 'error') showToast(j.message);
-            else if (j.type === 'send_input') fetch('/input_hook', {
-              method:'POST',headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ webrtc_id, chatbot: [] })
-            });
           } catch(e){}
         };
 
@@ -188,9 +184,6 @@
           return;
         }
         await peerConnection.setRemoteDescription(serverResp);
-
-        // Keep EventSource to /outputs endpoint for compatibility (no extra handling required)
-        new EventSource('/outputs?webrtc_id=' + webrtc_id);
 
       } catch (err) {
         console.error(err);
