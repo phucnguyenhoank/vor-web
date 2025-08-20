@@ -11,3 +11,6 @@ wheels/
 
 # Gradio environment
 .gradio
+
+# Temp files
+temp.txt

@@ -1,257 +1,246 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Voice Assistant (Smooth UI)</title>
-  <style>
-    /* Typography + smoothing */
-    html,body{height:100%;margin:0}
-    body{
-      display:flex;align-items:center;justify-content:center;
-      font-family:"Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      -webkit-font-smoothing:antialiased;
-      -moz-osx-font-smoothing:grayscale;
-      background:#fff;color:#000;padding:20px;
-    }
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Voice Assistant — Auto Start (No Button)</title>
 
-    /* Container */
-    .controls{
-      width:90%;max-width:880px;display:flex;align-items:center;
-      gap:18px;padding:16px;border:1px solid #000;height:120px;
-      box-sizing:border-box;border-radius:8px;
-    }
-
-    /* Bars (wave) */
-    .bars{flex:1;display:flex;gap:8px;align-items:end;height:64px}
-    .bar{
-      width:8px;height:100%;background:linear-gradient(180deg,#000,#333);
-      border-radius:8px; transform-origin:bottom;
-      will-change:transform,opacity;
-      /* Smooth transition for transform; short so visuals stay responsive */
-      transition: transform 140ms cubic-bezier(.22,1,.36,1), opacity 200ms;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.06) inset;
-      backface-visibility:hidden;
-    }
-
-    /* Button */
-    button{
-      min-width:128px;height:64px;border:1px solid #000;
-      background:#fff;color:#000;cursor:pointer;font-size:16px;
-      font-family:inherit;border-radius:6px;padding:8px;
-    }
-
-    /* Spinner / pulse visuals */
-    .spinner{width:16px;height:16px;border:2px solid #000;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .pulse{display:flex;align-items:center;gap:8px}
-    .pulse-dot{width:16px;height:16px;border-radius:50%;background:#000;opacity:.18;transform:scale(var(--audio-level,1));transition:transform .12s linear}
-
-    /* Toasts */
-    .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);display:none;padding:10px 14px;border-radius:6px;background:#d32f2f;color:#fff;font-size:14px}
-    .toast.warn{background:#ffb300;color:#000}
-
-    audio{display:none}
-  </style>
-</head>
-<body>
-  <div id="toast" class="toast"></div>
-
-  <div class="controls">
-    <div class="bars" id="bars" aria-hidden="true"></div>
-    <button id="start">Play</button>
-  </div>
-
-  <audio id="audioOutput" autoplay></audio>
-
-  <script>
-    // --- IMPORTANT: kept backend logic & endpoints intact ---
-    // RTC config placeholder from server-side templating
-    const RTC_CONFIG = __RTC_CONFIGURATION__;
-
-    let audioContext, analyser_in, analyser_out, data_in, data_out;
-    let raf_in, raf_out, peerConnection, webrtc_id;
-    const audioOutput = document.getElementById('audioOutput');
-    const startBtn = document.getElementById('start');
-    const toast = document.getElementById('toast');
-
-    // Build bars
-    const barsEl = document.getElementById('bars');
-    const BAR_COUNT = 32;
-    for (let i=0;i<BAR_COUNT;i++){
-      const b = document.createElement('div');
-      b.className='bar';
-      barsEl.appendChild(b);
-    }
-    const bars = Array.from(document.querySelectorAll('.bar'));
-
-    function showToast(msg, kind){
-      toast.textContent = msg;
-      toast.className = kind === 'warn' ? 'toast warn' : 'toast';
-      toast.style.display = 'block';
-      setTimeout(()=> toast.style.display='none', 5000);
-    }
-
-    function setButtonState(){
-      if (peerConnection && (peerConnection.connectionState==='connecting' || peerConnection.connectionState==='new')) {
-        startBtn.innerHTML = '<span style="display:flex;align-items:center;gap:8px"><span class="spinner"></span>Connecting...</span>';
-      } else if (peerConnection && peerConnection.connectionState==='connected') {
-        startBtn.innerHTML = '<span class="pulse"><span class="pulse-dot"></span>Stop</span>';
-      } else {
-        startBtn.textContent = 'Play';
+    <style>
+      body {
+        height: 100vh;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #000;
+        font-family: system-ui;
       }
-    }
 
-    async function setupWebRTC(){
-      peerConnection = new RTCPeerConnection(RTC_CONFIG);
-      setButtonState();
-
-      // slow connection warning (kept from original)
-      const slowTimeout = setTimeout(()=> showToast('Connection is taking longer than usual. Are you on a VPN?', 'warn'), 5000);
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-        // input analyser + level pulse
-        analyser_in = audioContext.createAnalyser();
-        analyser_in.fftSize = 64;
-        data_in = new Uint8Array(analyser_in.frequencyBinCount);
-        const inputSrc = audioContext.createMediaStreamSource(stream);
-        inputSrc.connect(analyser_in);
-        function monitorInput(){
-          analyser_in.getByteFrequencyData(data_in);
-          const avg = data_in.reduce((a,b)=>a+b,0)/data_in.length;
-          const lvl = 1 + (avg/255);
-          const dot = document.querySelector('.pulse-dot');
-          if (dot) dot.style.setProperty('--audio-level', lvl.toFixed(3));
-          raf_in = requestAnimationFrame(monitorInput);
-        }
-        monitorInput();
-
-        // send local tracks to peer
-        stream.getTracks().forEach(t => peerConnection.addTrack(t, stream));
-
-        // handle remote track - connect to audio element + visualiser
-        peerConnection.addEventListener('track', (evt) => {
-          if (audioOutput.srcObject !== evt.streams[0]) {
-            audioOutput.srcObject = evt.streams[0];
-            audioOutput.play().catch(()=>{});
-            analyser_out = audioContext.createAnalyser();
-            analyser_out.fftSize = 2048;
-            data_out = new Uint8Array(analyser_out.frequencyBinCount);
-            const outSrc = audioContext.createMediaStreamSource(evt.streams[0]);
-            outSrc.connect(analyser_out);
-            if (!raf_out) visualizeOutput();
-          }
-        });
-
-        // data channel handling (kept)
-        const dc = peerConnection.createDataChannel('text');
-        dc.onmessage = (ev) => {
-          try {
-            const j = JSON.parse(ev.data);
-            if (j.type === 'error') showToast(j.message);
-            else if (j.type === 'send_input') fetch('/input_hook', {
-              method:'POST',headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ webrtc_id, chatbot: [] })
-            });
-          } catch(e){}
-        };
-
-        peerConnection.addEventListener('connectionstatechange', ()=>{
-          console.log('conn state', peerConnection.connectionState);
-          if (peerConnection.connectionState === 'connected') clearTimeout(slowTimeout);
-          setButtonState();
-        });
-
-        // offer -> server (exact same mechanics)
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        await new Promise(resolve=>{
-          if (peerConnection.iceGatheringState === 'complete') return resolve();
-          const cb = ()=>{ if (peerConnection.iceGatheringState === 'complete'){ peerConnection.removeEventListener('icegatheringstatechange',cb); resolve(); } };
-          peerConnection.addEventListener('icegatheringstatechange', cb);
-        });
-
-        webrtc_id = Math.random().toString(36).slice(2,9);
-        const res = await fetch('/webrtc/offer', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ sdp: peerConnection.localDescription.sdp, type: peerConnection.localDescription.type, webrtc_id })
-        });
-        const serverResp = await res.json();
-        if (serverResp.status === 'failed') {
-          showToast(serverResp.meta.error === 'concurrency_limit_reached' ? `Too many connections. Maximum limit is ${serverResp.meta.limit}` : serverResp.meta.error);
-          stop();
-          return;
-        }
-        await peerConnection.setRemoteDescription(serverResp);
-
-        // Keep EventSource to /outputs endpoint for compatibility (no extra handling required)
-        new EventSource('/outputs?webrtc_id=' + webrtc_id);
-
-      } catch (err) {
-        console.error(err);
-        clearTimeout(slowTimeout);
-        showToast('Failed to establish connection. Please try again.');
-        stop();
+      .col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
       }
-    }
 
-    // --- Smooth visualization: exponential smoothing of frequency bins ---
-    const smoothValues = new Array(BAR_COUNT).fill(0);
-    const SMOOTH_FACTOR = 0.25; // smaller = smoother
-
-    function visualizeOutput(){
-      if (!analyser_out || !data_out) return;
-      raf_out = requestAnimationFrame(visualizeOutput);
-      analyser_out.getByteFrequencyData(data_out);
-
-      // map analyser bins to our BAR_COUNT
-      // use simple downsampling/averaging if analyser has more bins than bars
-      const step = Math.floor(data_out.length / BAR_COUNT) || 1;
-      for (let i=0;i<BAR_COUNT;i++){
-        let sum = 0;
-        let count = 0;
-        for (let j = i*step; j < (i+1)*step && j < data_out.length; j++){
-          sum += data_out[j];
-          count++;
-        }
-        const val = count ? (sum / count) / 255 : 0; // 0..1
-        // exponential smoothing: new = old*(1-a) + val*a
-        smoothValues[i] = smoothValues[i] * (1 - SMOOTH_FACTOR) + val * SMOOTH_FACTOR;
-        // scale and clamp for visual
-        const scaled = Math.max(0.08, smoothValues[i] * 2.2); // ensure a minimum visible height
-        bars[i].style.transform = `scaleY(${scaled.toFixed(3)})`;
-        bars[i].style.opacity = 0.6 + (Math.min(1, smoothValues[i]) * 0.5);
+      #circle {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: #000;
+        transform: scale(1);
+        transition: transform 120ms linear;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+        margin-bottom: 60px;
+        transform-origin: center center;
       }
-    }
 
-    function stop(){
-      if (peerConnection){
+      #label {
+        font-size: 20px;
+        color: #333;
+      }
+
+      audio {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="col">
+      <div id="circle" aria-hidden="true"></div>
+      <div id="label">Starting…</div>
+    </div>
+
+    <audio id="audioOutput" autoplay></audio>
+
+    <script>
+      const AUTO_START = true; // auto start enabled
+      const RTC_CONFIG = __RTC_CONFIGURATION__;
+
+      const circle = document.getElementById("circle");
+      const label = document.getElementById("label");
+      const audioOutput = document.getElementById("audioOutput");
+
+      let pc = null,
+        webrtc_id = null;
+      let ac = null,
+        analyser_in = null,
+        analyser_out = null;
+      let data_in = null,
+        data_out = null;
+      let raf_in = null,
+        raf_out = null;
+      let micLevel = 0,
+        remoteLevel = 0,
+        smooth = 1;
+
+      const SMOOTH = 0.18;
+
+      function setLabel(txt) {
+        label.textContent = txt;
+      }
+
+      function setUI() {
+        if (pc && (pc.connectionState === "connecting" || pc.connectionState === "new")) {
+          setLabel("Connecting…");
+        } else if (pc && pc.connectionState === "connected") {
+          setLabel("Connected — listening");
+        } else {
+          setLabel("Listening (auto)");
+        }
+      }
+
+      function avg(arr) {
+        if (!arr || !arr.length) return 0;
+        let s = 0;
+        for (let i = 0; i < arr.length; i++) s += arr[i];
+        return s / arr.length;
+      }
+
+      function monitorMic() {
+        if (!analyser_in || !data_in) return;
+        analyser_in.getByteFrequencyData(data_in);
+        micLevel = Math.min(1, Math.max(0, avg(data_in) / 255));
+        raf_in = requestAnimationFrame(monitorMic);
+      }
+
+      function visualizeRemote() {
+        if (!analyser_out || !data_out) return;
+        analyser_out.getByteFrequencyData(data_out);
+        remoteLevel = Math.min(1, Math.max(0, avg(data_out) / 255));
+        const active = Math.max(remoteLevel, micLevel);
+        const target = 1 + active * 1.6;
+        smooth = smooth * (1 - SMOOTH) + target * SMOOTH;
+        circle.style.transform = `scale(${smooth.toFixed(3)})`;
+        raf_out = requestAnimationFrame(visualizeRemote);
+      }
+
+      async function setupWebRTC() {
+        pc = new RTCPeerConnection(RTC_CONFIG);
+        setUI();
+
+        const slow = setTimeout(() => setLabel("Connection taking longer than usual"), 5000);
+
         try {
-          peerConnection.getTransceivers && peerConnection.getTransceivers().forEach(t=>t.stop && t.stop());
-          peerConnection.getSenders && peerConnection.getSenders().forEach(s=>s.track && s.track.stop && s.track.stop());
-          peerConnection.close();
-        } catch(e){}
-        peerConnection = null;
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+          ac = new (window.AudioContext || window.webkitAudioContext)();
+          analyser_in = ac.createAnalyser();
+          analyser_in.fftSize = 64;
+          data_in = new Uint8Array(analyser_in.frequencyBinCount);
+
+          const inSrc = ac.createMediaStreamSource(stream);
+          inSrc.connect(analyser_in);
+          if (!raf_in) monitorMic();
+
+          stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+          pc.addEventListener("track", (evt) => {
+            if (audioOutput.srcObject !== evt.streams[0]) {
+              audioOutput.srcObject = evt.streams[0];
+              audioOutput.play().catch(() => {});
+
+              analyser_out = ac.createAnalyser();
+              analyser_out.fftSize = 2048;
+              data_out = new Uint8Array(analyser_out.frequencyBinCount);
+
+              const outSrc = ac.createMediaStreamSource(evt.streams[0]);
+              outSrc.connect(analyser_out);
+
+              if (raf_out) cancelAnimationFrame(raf_out);
+              raf_out = requestAnimationFrame(visualizeRemote);
+            }
+          });
+
+          const dc = pc.createDataChannel("text");
+          dc.onmessage = (e) => {
+            try {
+              const j = JSON.parse(e.data);
+              if (j.type === "error") setLabel(j.message);
+            } catch {}
+          };
+
+          pc.addEventListener("connectionstatechange", () => {
+            clearTimeout(slow);
+            setUI();
+          });
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          await new Promise((resolve) => {
+            if (pc.iceGatheringState === "complete") return resolve();
+            const cb = () => {
+              if (pc.iceGatheringState === "complete") {
+                pc.removeEventListener("icegatheringstatechange", cb);
+                resolve();
+              }
+            };
+            pc.addEventListener("icegatheringstatechange", cb);
+          });
+
+          webrtc_id = Math.random().toString(36).slice(2, 9);
+          const res = await fetch("/webrtc/offer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sdp: pc.localDescription.sdp,
+              type: pc.localDescription.type,
+              webrtc_id,
+            }),
+          });
+
+          const serverResp = await res.json();
+
+          if (serverResp.status === "failed") {
+            setLabel(serverResp.meta.error || "Failed");
+            stop();
+            return;
+          }
+
+          await pc.setRemoteDescription(serverResp);
+        } catch (err) {
+          console.error(err);
+          setLabel("Failed to establish connection");
+          stop();
+        }
+
+        setUI();
       }
-      if (raf_in) cancelAnimationFrame(raf_in), raf_in = null;
-      if (raf_out) cancelAnimationFrame(raf_out), raf_out = null;
-      if (audioContext) { try{ audioContext.close(); }catch(e){} audioContext = null; }
-      setButtonState();
-    }
 
-    startBtn.addEventListener('click', ()=>{
-      // exact text check preserved to avoid changing logic
-      if (startBtn.textContent === 'Play') setupWebRTC();
-      else stop();
-    });
+      function stop() {
+        if (raf_in) cancelAnimationFrame(raf_in), (raf_in = null);
+        if (raf_out) cancelAnimationFrame(raf_out), (raf_out = null);
 
-    // initial state
-    setButtonState();
-  </script>
-</body>
+        try {
+          pc &&
+            pc.getSenders &&
+            pc.getSenders().forEach((s) => s.track && s.track.stop && s.track.stop());
+          pc && pc.close();
+        } catch {}
+
+        try {
+          ac && ac.close();
+        } catch {}
+
+        pc = null;
+        ac = null;
+        analyser_in = null;
+        analyser_out = null;
+        data_in = null;
+        data_out = null;
+        micLevel = 0;
+        remoteLevel = 0;
+        smooth = 1;
+        circle.style.transform = "scale(1)";
+        setUI();
+      }
+
+      // auto start on load
+      if (AUTO_START) setupWebRTC();
+      setUI();
+    </script>
+  </body>
 </html>
