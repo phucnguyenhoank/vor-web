@@ -75,7 +75,6 @@ def response(
             response_text = current_response
             is_speaking = True
             for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(response_text))):
-                print(f"chunk[{i}]")
                 yield chunk
             is_speaking = False
         return  # End after restart
@@ -109,7 +108,7 @@ stream = Stream(
         model_options=SileroVadOptions(
             threshold=0.5,                   # VAD decision threshold (lower => more sensitive)
             min_speech_duration_ms=250,      # minimum speech length to consider (short words allowed)
-            min_silence_duration_ms=500      # silence required to consider speech ended
+            min_silence_duration_ms=1000      # silence required to consider speech ended
         ),
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
