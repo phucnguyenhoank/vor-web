@@ -10,5 +10,6 @@ dependencies = [
     "faster-whisper>=1.2.0",
     "fastrtc[stt,tts,vad]>=0.0.30",
     "ollama>=0.5.3",
+    "pip>=25.2",
     "torchaudio>=2.8.0",
 ]

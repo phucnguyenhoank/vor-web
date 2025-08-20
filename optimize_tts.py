@@ -9,7 +9,7 @@ def add_numbers(a: int, b: int) -> int:
 def is_complete_sentence(text: str) -> bool:
     """Check if text is a complete sentence ending with '.' but not just a number like '1.'"""
     text = text.strip()
-    if not text.endswith("."):
+    if not text.endswith((".", "?", "!")):
         return False
     if re.fullmatch(r"\d+\.", text):  # reject "1.", "23." alone
         return False

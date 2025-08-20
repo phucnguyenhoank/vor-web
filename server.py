@@ -46,13 +46,13 @@ load_dotenv()
 curr_dir = Path(__file__).parent
 
 tts_model = get_tts_model()
-stt_model = get_stt_model("faster-whisper-small.en", device="cpu") # optional vietnamese
+stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional vietnamese
 
 import re  # Add this import for regex cleaning
 
 def clean_for_tts(text: str) -> str:
     # Remove leading '*' or 'number.' followed by space
-    cleaned = re.sub(r'^\s*(\*|\d+\.)\s*', '', text.strip())
+    cleaned = text.replace("*", "")
     return cleaned
 
 is_speaking = False
@@ -62,13 +62,14 @@ messages = []
 def response(
     audio: tuple[int, np.ndarray],
 ):
+    print('got it')
     global is_speaking, current_response, messages
     # Transcribe audio using stt_model (handles 48 kHz, int16, shape=(1, N))
     prompt = stt_model.stt(audio)
 
     # Check noise
     word_count = len(prompt.strip().split())
-    if is_speaking and word_count <= 3:
+    if word_count == 0 or is_speaking and word_count <= 2:
         print(f'ignored_noise>{prompt} ({word_count} words)')
         # Restart talking the current response instead of stopping
         if current_response:
@@ -101,14 +102,14 @@ stream = Stream(
         response,# Algorithm-level options (how you collect / decide on chunks)
         algo_options=AlgoOptions(
             audio_chunk_duration=0.6,        # collect 0.6s per internal chunk (bigger => more context)
-            started_talking_threshold=0.2,   # fraction of the chunk that must be speech to mark "start"
+            started_talking_threshold=0.57,   #  < 0.6 fraction of the chunk that must be speech to mark "start"
             speech_threshold=0.1             # lower => more sensitive to soft speech
         ),
         # Model-level VAD (Silero) options (controls sensitivity / min durations)
         model_options=SileroVadOptions(
-            threshold=0.5,                   # VAD decision threshold (lower => more sensitive)
-            min_speech_duration_ms=250,      # minimum speech length to consider (short words allowed)
-            min_silence_duration_ms=1000      # silence required to consider speech ended
+            threshold=0.55,                   # VAD decision threshold (lower => more sensitive)
+            min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
+            min_silence_duration_ms=3000      # silence required to consider speech ended
         ),
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
