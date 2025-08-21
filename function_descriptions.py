@@ -125,3 +125,8 @@ TOOLS = [
         }
     }
 ]
+
+TOOLS_FULL = []
+for tool in TOOLS:
+    TOOLS_FULL.append({"type": "function"})
+    TOOLS_FULL[-1]["function"] = tool

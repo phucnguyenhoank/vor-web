@@ -21,6 +21,7 @@ requests.Session = UnsafeSession
 # ------------SSL--------------
 
 import json
+import ast
 import os
 import time
 import re
@@ -61,12 +62,12 @@ system_prompt = f"""
 
     Your goals:
     1. Greet the customer warmly and ask what they would like to order.
-    2. Collect the customer’s order by calling the appropriate tools:
+    2. Collect the customer's order by calling the appropriate tools:
     - Use get_menu to answer questions about available food and drinks.
     - Use increase_order_items when the customer adds something.
     - Use set_order_items when the customer specifies exact quantities.
     - Use remove_order_items when the customer changes their mind or removes items.
-    - Use get_customer_order to confirm what’s currently in the cart.
+    - Use get_customer_order to confirm what's currently in the cart.
     - Use calculate_total if the customer asks for the price so far.
     - Use create_order only when the order is finalized.
     3. After create_order, tell the customer their total and politely direct them to the next payment window.
@@ -77,12 +78,12 @@ system_prompt = f"""
     7. Stay brief and conversational. Avoid robotic long answers.
 
     Tool usage rules:
-    - Only call a tool if needed to fulfill the user’s request. 
+    - Only call a tool if needed to fulfill the user's request. 
     - Always return to the conversation with the customer after a tool call. 
     - Do not expose tool names or JSON arguments to the customer. 
     Just speak naturally as if you are a staff member.
     - Example: if the model uses increase_order_items internally, 
-    then to the customer you say: “Got it, I’ve added a cheeseburger to your order.”
+    then to the customer you say: “Got it, I've added a cheeseburger to your order.”
 
     End of interaction:
     - After create_order is called, tell the customer their total, 
@@ -94,7 +95,6 @@ system_prompt = f"""
     """
 
 greeting_prompt = "Welcome! I'm here to take your order — what would you like to eat today?"
-
 
 load_dotenv()
 curr_dir = Path(__file__).parent
@@ -121,12 +121,37 @@ messages = [
     {"role": "system", "content": system_prompt},
     {"role": "assistant", "content": greeting_prompt}
 ]
-LLM_NAME = "llama3.1:8b" # "llama3.2:1b"
+LLM_NAME = "llama3.1:8b-instruct-q8_0" # "mistral-nemo:latest" # "llama3.1:8b" # "llama3.2:1b"
 
 def print_content(message):
     role = message["role"]
     content = message["content"]
     print(f"{role}> {content}")
+
+def safe_parse_arguments(arguments: dict) -> dict:
+    """
+    Ensure all values inside arguments are parsed into Python objects.
+    Handles JSON strings, Python-style reprs, and nested structures.
+    """
+    def try_parse(value):
+        if isinstance(value, str):
+            # First try JSON
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                pass
+            # Then try Python literal (handles single quotes)
+            try:
+                return ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                return value
+        elif isinstance(value, dict):
+            return {k: try_parse(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [try_parse(v) for v in value]
+        return value
+
+    return {k: try_parse(v) for k, v in arguments.items()}
 
 def response(
     audio: tuple[int, np.ndarray],
@@ -149,10 +174,10 @@ def response(
     print(f'user>{prompt}')
     messages.append({"role": "user", "content": prompt})
 
-    resp = chat(model=LLM_NAME, messages=messages, tools=TOOLS)
+    resp = chat(model=LLM_NAME, messages=messages, tools=TOOLS_FULL)
 
     message = resp["message"]
-    print(message)
+    print(json.dumps(message.model_dump(), indent=4))
     if message.get("tool_calls"):
         tool_calls = message["tool_calls"]
         messages.append(message) # Append assistant's message with tool calls
@@ -161,8 +186,10 @@ def response(
             function_name = tool_call["function"]["name"]
             if function_name in available_tools:
                 function_to_call = available_tools[function_name]
-                arguments = tool_call["function"].get("arguments", {})
-                tool_result = function_to_call(**arguments)
+                arguments = tool_call["function"]["arguments"]
+                parsed_args = safe_parse_arguments(arguments)
+                tool_result = function_to_call(**parsed_args)
+                print(f'Tool {function_name} result: {tool_result}')
             else:
                 tool_result = {"error": f"Unknown function: {function_name}"}
 
@@ -172,7 +199,8 @@ def response(
                 "content": json.dumps(tool_result, ensure_ascii=False)
             })
 
-        followup = chat(model=LLM_NAME, messages=messages, tools=TOOLS)
+        followup = chat(model=LLM_NAME, messages=messages, tools=TOOLS_FULL)
+        print(json.dumps(followup["message"].model_dump(), indent=4))
         print_content(followup["message"])
         current_response = followup["message"]["content"]
         is_speaking = True
