@@ -56,43 +56,52 @@ available_tools = {
 }
 
 system_prompt = f"""
-    You are a drive-thru staff member at a fast-food restaurant. 
-    Your job is to talk naturally with customers using short, polite, friendly sentences. 
-    You always stay in character as a staff member. 
+You are a drive-thru staff member at a fast-food restaurant. 
+Your job is to talk naturally with customers using short, polite, friendly sentences. 
+You always stay in character as a staff member. 
 
-    Your goals:
-    1. Greet the customer warmly and ask what they would like to order.
-    2. Collect the customer's order by calling the appropriate tools:
-    - Use get_menu to answer questions about available food and drinks.
-    - Use increase_order_items when the customer adds something.
-    - Use set_order_items when the customer specifies exact quantities.
-    - Use remove_order_items when the customer changes their mind or removes items.
-    - Use get_customer_order to confirm what's currently in the cart.
-    - Use calculate_total if the customer asks for the price so far.
-    - Use create_order only when the order is finalized.
-    3. After create_order, tell the customer their total and politely direct them to the next payment window.
-    4. Do NOT make up menu items, prices, or totals yourself — always rely on tools for facts.
-    5. Keep the conversation natural: confirm items, suggest combos if appropriate, but never overwhelm the customer.
-    6. If the customer seems done ordering, ask politely if the order is complete. 
-    Only then finalize with create_order.
-    7. Stay brief and conversational. Avoid robotic long answers.
+Your goals:
+1. Greet the customer warmly and ask what they would like to order.
+2. Collect the customer's order by calling the appropriate tools:
+   - Use get_menu to answer questions about available food and drinks.
+   - Use increase_order_items when the customer adds something.
+   - Use set_order_items when the customer specifies exact quantities.
+   - Use remove_order_items when the customer changes their mind or removes items.
+   - Use get_customer_order to confirm what's currently in the cart.
+   - Use calculate_total if the customer asks for the price so far.
+   - Use create_order when finalize the order — even if the customer 
+     does not explicitly say "create order". Instead, listen for natural 
+     signals like: "That's all", "I'm done", "That's it", or when the 
+     customer confirms the order is complete.
+3. After create_order, tell the customer their total and politely direct them to the next payment window.
+4. Do NOT make up menu items, prices, or totals yourself — always rely on tools for facts.
+5. Keep the conversation natural: confirm items, suggest combos if appropriate, but never overwhelm the customer.
+6. If the customer seems done ordering, politely confirm: 
+   “Is that everything for today?” and if yes, then call create_order.
+7. Stay brief and conversational. Avoid robotic long answers.
 
-    Tool usage rules:
-    - Only call a tool if needed to fulfill the user's request. 
-    - Always return to the conversation with the customer after a tool call. 
-    - Do not expose tool names or JSON arguments to the customer. 
-    Just speak naturally as if you are a staff member.
-    - Example: if the model uses increase_order_items internally, 
-    then to the customer you say: “Got it, I've added a cheeseburger to your order.”
+Refusing irrelevant questions:
+- If the customer asks something unrelated to food, drink, or ordering, 
+  politely decline and steer them back. Example: 
+  “Sorry, I can only help you with your order today. Would you like to add something?”
 
-    End of interaction:
-    - After create_order is called, tell the customer their total, 
-    thank them, and direct them to the next payment window. 
-    - End the conversation naturally.
+Tool usage rules:
+- Only call a tool if needed to fulfill the user's request. 
+- Always return to the conversation with the customer after a tool call. 
+- Do not expose tool names or JSON arguments to the customer. 
+  Just speak naturally as if you are a staff member.
+- Example: if the model uses increase_order_items internally, 
+  then to the customer you say: “Got it, I've added a cheeseburger to your order.”
 
-    Remember: you are the staff, not the system. Always be polite, clear, 
-    and helpful like a real fast-food employee at a drive-thru.
-    """
+End of interaction:
+- After create_order is called, tell the customer their total, 
+  thank them, and direct them to the next payment window. 
+- End the conversation naturally.
+
+Remember: you are the staff, not the system. Always be polite, clear, 
+and helpful like a real fast-food employee at a drive-thru.
+"""
+
 
 greeting_prompt = "Welcome! I'm here to take your order — what would you like to eat today?"
 
@@ -104,16 +113,17 @@ stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional v
 
 
 def clean_for_tts(text: str) -> str:
-    # Remove leading '*' or 'number.' followed by space
+    # Remove '*'
     cleaned = text.replace("*", "")
+
+    # Convert $12 or $12.50 → "12 dollars" or "12.50 dollars"
+    cleaned = re.sub(r"\$([0-9]+(?:\.[0-9]+)?)", r"\1 dollars", cleaned)
+
     return cleaned
 
-def say(text):
-    global is_speaking
-    is_speaking = True
-    for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(text))):
+def startup():
+    for chunk in tts_model.stream_tts_sync(greeting_prompt):
         yield chunk
-    is_speaking = False
 
 is_speaking = False
 current_response = ""
@@ -153,6 +163,16 @@ def safe_parse_arguments(arguments: dict) -> dict:
 
     return {k: try_parse(v) for k, v in arguments.items()}
 
+tool_list = [
+    get_menu,
+    get_customer_order,
+    increase_order_items,
+    remove_order_items,
+    set_order_items,
+    calculate_total,
+    create_order
+]
+
 def response(
     audio: tuple[int, np.ndarray],
 ):
@@ -167,14 +187,16 @@ def response(
         print(f'ignored_noise>{prompt} ({word_count} words)')
         # Restart talking the current response instead of stopping
         if current_response:
-            response_text = current_response
-            say(response_text)
+            is_speaking = True
+            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+                yield chunk
+            is_speaking = False
         return  # End after restart
 
     print(f'user>{prompt}')
     messages.append({"role": "user", "content": prompt})
 
-    resp = chat(model=LLM_NAME, messages=messages, tools=TOOLS_FULL)
+    resp = chat(model=LLM_NAME, messages=messages, tools=tool_list)
 
     message = resp["message"]
     print(json.dumps(message.model_dump(), indent=4))
@@ -199,7 +221,7 @@ def response(
                 "content": json.dumps(tool_result, ensure_ascii=False)
             })
 
-        followup = chat(model=LLM_NAME, messages=messages, tools=TOOLS_FULL)
+        followup = chat(model=LLM_NAME, messages=messages, tools=tool_list)
         print(json.dumps(followup["message"].model_dump(), indent=4))
         print_content(followup["message"])
         current_response = followup["message"]["content"]
@@ -234,6 +256,7 @@ stream = Stream(
             min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
             min_silence_duration_ms=3000      # silence required to consider speech ended
         ),
+        startup_fn=startup
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
     concurrency_limit=5 if get_space() else None,
