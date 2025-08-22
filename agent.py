@@ -43,7 +43,7 @@ from gradio.utils import get_space
 from ollama import chat
 from localstt import get_stt_model
 from function_descriptions import *
-from order_funtions import *
+from order_functions import *
 
 available_tools = {
     "get_menu": get_menu,
