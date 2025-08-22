@@ -15,13 +15,14 @@ class STTModel(Protocol):
     def stt(self, audio: tuple[int, NDArray[np.int16 | np.float32]]) -> str: ...
 
 class LocalFasterWhisperSTT(STTModel):
-    def __init__(self, model_path: str = "faster-whisper-small.en", device: str = "cpu", compute_type: str = "int8"):
+    def __init__(self, model_path: str = "small", device: str = "cpu", compute_type: str = "int8"):
         try:
             self.model = WhisperModel(model_path, device=device, compute_type=compute_type)
         except Exception as e:
             raise RuntimeError(f"Error loading faster-whisper model: {e}")
 
     def stt(self, audio: tuple[int, NDArray[np.int16 | np.float32]]) -> str:
+        """Transcribe audio to text using automatic language detection."""
         sr, audio_np = audio  # sr is 48000, audio_np is shape (1, N), dtype=int16
 
         # Convert int16 to float32 and normalize to [-1, 1]
@@ -33,14 +34,13 @@ class LocalFasterWhisperSTT(STTModel):
         # Resample from 48 kHz to 16 kHz
         audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=16000)
 
-        # Transcribe with faster-whisper
-        segments, _ = self.model.transcribe(audio_np, beam_size=5, language="en")
+        # Transcribe with faster-whisper using automatic language detection
+        segments, _ = self.model.transcribe(audio_np, beam_size=5, language=None)
         return " ".join(seg.text for seg in segments)
-
 
 @lru_cache
 def get_stt_model(
-    model_path: str = "faster-whisper-small.en", device: str = "cpu", compute_type: str = "int8"
+    model_path: str = "small", device: str = "cpu", compute_type: str = "int8"
 ) -> STTModel:
     os_env = __import__("os").environ
     os_env["TOKENIZERS_PARALLELISM"] = "false"

@@ -41,12 +41,18 @@ from fastrtc import (
 from gradio.utils import get_space
 from ollama import chat
 from localstt import get_stt_model
+from HumAwareVad.humaware_vad import HumAwareVADModel
+from localtts import VitsTTSModel, VitsTTSOptions
+
+vad_model = HumAwareVADModel()
+
 
 load_dotenv()
 curr_dir = Path(__file__).parent
 
 tts_model = get_tts_model()
 stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional vietnamese
+vstt_model = VitsTTSModel()
 
 import re  # Add this import for regex cleaning
 
@@ -75,7 +81,7 @@ def response(
         if current_response:
             response_text = current_response
             is_speaking = True
-            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(response_text))):
+            for i, chunk in enumerate(vstt_model.stream_tts_sync(clean_for_tts(response_text))):
                 yield chunk
             is_speaking = False
         return  # End after restart
@@ -91,7 +97,7 @@ def response(
     current_response = response_text  # Cache for potential restarts
 
     is_speaking = True
-    for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(response_text))):
+    for i, chunk in enumerate(vstt_model.stream_tts_sync(clean_for_tts(response_text))):
         yield chunk
     is_speaking = False
 
@@ -99,18 +105,8 @@ stream = Stream(
     modality="audio",
     mode="send-receive",
     handler=ReplyOnPause(
-        response,# Algorithm-level options (how you collect / decide on chunks)
-        algo_options=AlgoOptions(
-            audio_chunk_duration=0.6,        # collect 0.6s per internal chunk (bigger => more context)
-            started_talking_threshold=0.57,   #  < 0.6 fraction of the chunk that must be speech to mark "start"
-            speech_threshold=0.1             # lower => more sensitive to soft speech
-        ),
-        # Model-level VAD (Silero) options (controls sensitivity / min durations)
-        model_options=SileroVadOptions(
-            threshold=0.55,                   # VAD decision threshold (lower => more sensitive)
-            min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
-            min_silence_duration_ms=3000      # silence required to consider speech ended
-        ),
+        response,
+        model=vad_model
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
     concurrency_limit=5 if get_space() else None,
