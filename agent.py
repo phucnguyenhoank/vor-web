@@ -47,38 +47,39 @@ from order_funtions import *
 
 available_tools = {
     "get_menu": get_menu,
-    "get_customer_order": get_customer_order,
     "increase_order_items": increase_order_items,
     "remove_order_items": remove_order_items,
     "set_order_items": set_order_items,
-    "calculate_total": calculate_total,
+    "replace_order_item": replace_order_item,
+    "preview_order": preview_order,
     "create_order": create_order
 }
 
 system_prompt = f"""
 You are a drive-thru staff member at a fast-food restaurant. 
 Your job is to talk naturally with customers using short, polite, friendly sentences. 
-You always stay in character as a staff member. 
+You always stay in character as a staff member.
+You have to create an order before finalize it.
 
 Your goals:
 1. Greet the customer warmly and ask what they would like to order.
 2. Collect the customer's order by calling the appropriate tools:
-   - Use get_menu to answer questions about available food and drinks.
-   - Use increase_order_items when the customer adds something.
-   - Use set_order_items when the customer specifies exact quantities.
-   - Use remove_order_items when the customer changes their mind or removes items.
-   - Use get_customer_order to confirm what's currently in the cart.
-   - Use calculate_total if the customer asks for the price so far.
-   - Use create_order when finalize the order — even if the customer 
+   - Call get_menu to answer questions about available food and drinks.
+   - Call increase_order_items when the customer adds something.
+   - Call set_order_items when the customer specifies exact quantities.
+   - Call replace_order_items if the customer requests replacing an existing item with a different one.
+   - Call remove_order_items when the customer changes their mind or removes items.
+   - Call create_order when finalize the order — even if the customer 
      does not explicitly say "create order". Instead, listen for natural 
      signals like: "That's all", "I'm done", "That's it", or when the 
      customer confirms the order is complete.
+   - Call preview_order only to check what's currently in the customer's cart or to show the price of their order so far.
 3. After create_order, tell the customer their total and politely direct them to the next payment window.
 4. Do NOT make up menu items, prices, or totals yourself — always rely on tools for facts.
 5. Keep the conversation natural: confirm items, suggest combos if appropriate, but never overwhelm the customer.
 6. If the customer seems done ordering, politely confirm: 
    “Is that everything for today?” and if yes, then call create_order.
-7. Stay brief and conversational. Avoid robotic long answers.
+7. Stay brief, concise, and conversational. Avoid robotic long answers.
 
 Refusing irrelevant questions:
 - If the customer asks something unrelated to food, drink, or ordering, 
@@ -86,9 +87,10 @@ Refusing irrelevant questions:
   “Sorry, I can only help you with your order today. Would you like to add something?”
 
 Tool usage rules:
-- Only call a tool if needed to fulfill the user's request. 
+- Only call tools if needed to fulfill the user's request. 
+- You can call many tools if you think that is needed.
 - Always return to the conversation with the customer after a tool call. 
-- Do not expose tool names or JSON arguments to the customer. 
+- Do NOT expose tool names or JSON arguments to the customer. 
   Just speak naturally as if you are a staff member.
 - Example: if the model uses increase_order_items internally, 
   then to the customer you say: “Got it, I've added a cheeseburger to your order.”
@@ -103,7 +105,7 @@ and helpful like a real fast-food employee at a drive-thru.
 """
 
 
-greeting_prompt = "Welcome! I'm here to take your order — what would you like to eat today?"
+greeting_prompt = "Welcome! Thanks for choosing us — what would you like to eat today?"
 
 load_dotenv()
 curr_dir = Path(__file__).parent
@@ -116,8 +118,20 @@ def clean_for_tts(text: str) -> str:
     # Remove '*'
     cleaned = text.replace("*", "")
 
-    # Convert $12 or $12.50 → "12 dollars" or "12.50 dollars"
-    cleaned = re.sub(r"\$([0-9]+(?:\.[0-9]+)?)", r"\1 dollars", cleaned)
+    def money_to_speech(match):
+        amount = match.group(1)
+        if "." in amount:
+            dollars, cents = amount.split(".")
+            if dollars == "0":  # like $0.99
+                return f"{int(cents)} cents"
+            if cents == "00":  # like $12.00
+                return f"{int(dollars)} dollars"
+            return f"{int(dollars)} {cents}"
+        else:
+            return f"{int(amount)} dollars"
+
+    # Convert money
+    cleaned = re.sub(r"\$([0-9]+(?:\.[0-9]+)?)", money_to_speech, cleaned)
 
     return cleaned
 
@@ -165,11 +179,11 @@ def safe_parse_arguments(arguments: dict) -> dict:
 
 tool_list = [
     get_menu,
-    get_customer_order,
     increase_order_items,
     remove_order_items,
     set_order_items,
-    calculate_total,
+    replace_order_item,
+    preview_order,
     create_order
 ]
 
@@ -239,22 +253,22 @@ def response(
         is_speaking = False
         messages.append(message)
         
-
+THRESHOLD = 0.7
 stream = Stream(
     modality="audio",
     mode="send-receive",
     handler=ReplyOnPause(
         response,# Algorithm-level options (how you collect / decide on chunks)
         algo_options=AlgoOptions(
-            audio_chunk_duration=0.6,        # collect 0.6s per internal chunk (bigger => more context)
-            started_talking_threshold=0.57,   #  < 0.6 fraction of the chunk that must be speech to mark "start"
+            audio_chunk_duration=THRESHOLD,        # collect 0.6s per internal chunk (bigger => more context)
+            started_talking_threshold=THRESHOLD - 0.1,   # that must be speech to mark "start"
             speech_threshold=0.1             # lower => more sensitive to soft speech
         ),
         # Model-level VAD (Silero) options (controls sensitivity / min durations)
         model_options=SileroVadOptions(
-            threshold=0.55,                   # VAD decision threshold (lower => more sensitive)
+            threshold=0.9,                   # VAD decision threshold (lower => more sensitive)
             min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
-            min_silence_duration_ms=3000      # silence required to consider speech ended
+            min_silence_duration_ms=250      # silence required to consider speech ended
         ),
         startup_fn=startup
     ),

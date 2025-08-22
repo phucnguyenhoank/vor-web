@@ -106,7 +106,13 @@ def get_menu(category_ids: list[int] | None = None) -> MenuData:
     only containing those categories, their items, and applicable discounts.
 
     Input:
-      category_ids: Optional[List[int]]; e.g. [1, 3]
+    category_ids: Optional[List[int]];
+    Here is the full list of categories with their IDs:
+    [
+        {"id": 1, "name": "Burgers"},
+        {"id": 2, "name": "Sides"},
+        {"id": 3, "name": "Drinks"}
+    ]
 
     Output:
       MenuData (dict with categories, items, discounts)
@@ -223,10 +229,62 @@ def set_order_items(items: list[ItemInput]) -> dict[str, Any]:
 
     return {"message": "Items set successfully.", "current_customer_order": customer_order.copy()}
 
-def calculate_total() -> TotalsResult:
+def replace_order_item(old_item_id: int, new_item_id: int, new_quantity: int) -> dict[str, Any]:
     """
-    Read-only preview using the global cart.
-    Returns a dict with order_details, subtotal, discounts_applied, total_price.
+    Replace an item in the order by changing its item_id and quantity.
+
+    Input:
+      old_item_id: the current item_id in the cart
+      new_item_id: the item_id to replace it with
+      new_quantity: the quantity to set for the new item
+
+    Here is the full list of food items with their IDs, and names:
+    [
+        {"id": 1, "name": "Cheeseburger"},
+        {"id": 2, "name": "Veggie Burger"},
+        {"id": 3, "name": "French Fries"},
+        {"id": 4, "name": "Coca-Cola"},
+        {"id": 5, "name": "Orange Juice"}
+    ]
+    
+    Behavior:
+      - If old_item_id exists, it will be replaced with new_item_id and quantity set to new_quantity.
+      - If new_item_id already exists in the cart, its quantity will be overwritten with new_quantity.
+      - If old_item_id does not exist, return an error.
+    """
+    global customer_order
+
+    for cart_item in customer_order:
+        if cart_item["item_id"] == old_item_id:
+
+            # check if new_item already exists separately
+            for other_item in customer_order:
+                if other_item["item_id"] == new_item_id and other_item is not cart_item:
+                    other_item["quantity"] = new_quantity
+                    customer_order.remove(cart_item)
+                    return {
+                        "message": "Item replaced and updated successfully.",
+                        "current_customer_order": customer_order.copy()
+                    }
+
+            # just replace in place
+            cart_item["item_id"] = new_item_id
+            cart_item["quantity"] = new_quantity
+            return {
+                "message": "Item replaced successfully.",
+                "current_customer_order": customer_order.copy()
+            }
+
+    return {
+        "error": f"Item with id {old_item_id} not found.",
+        "current_customer_order": customer_order.copy()
+    }
+
+
+def preview_order() -> TotalsResult:
+    """
+    Read-only preview using the global customer_order.
+    Returns a dict with order_details, subtotal, discounts_applied, total_price, current_customer_order
     """
     global customer_order
 
@@ -272,9 +330,7 @@ def calculate_total() -> TotalsResult:
         "subtotal": subtotal,
         "discounts_applied": discounts_applied,
         "total_price": total,
-        "order_id": None,
-        "created_at": None,
-        "saved_as": None
+        "current_customer_order": customer_order
     }
 
 def create_order() -> TotalsResult:
@@ -287,7 +343,7 @@ def create_order() -> TotalsResult:
     if not customer_order:
         return {"error": "Customer order is empty. Add some items first."}  # type: ignore
 
-    totals = calculate_total()
+    totals = preview_order()
 
     now = datetime.datetime.now()
     order_id = uuid.uuid4().hex
@@ -322,12 +378,3 @@ def create_order() -> TotalsResult:
     customer_order = []
 
     return totals
-
-# ----------------------------
-# Quick usage examples
-# ----------------------------
-# increase_order_items([{"item_id": 1, "quantity": 2}])
-# set_order_items([{"item_id": 1, "quantity": 5}])
-# remove_order_items([1, 2])
-# calculate_total()
-# create_order()
