@@ -1,0 +1,3 @@
+order_id,created_at,item_id,item_name,quantity,price_per_item,discount_pct,line_total,line_discount,line_after_discount
+b0acb58b9bb6463291e785a82326bebe,2025-08-22T18:04:33.204900,1,Cheeseburger,2,5.99,0.0,11.98,0.0,11.98
+b0acb58b9bb6463291e785a82326bebe,2025-08-22T18:04:33.204900,4,Coca-Cola,1,1.49,0.1,1.49,0.15,1.34

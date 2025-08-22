@@ -7,24 +7,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "accelerate"
-version = "1.10.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "psutil" },
-    { name = "pyyaml" },
-    { name = "safetensors" },
-    { name = "torch" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/66/be171836d86dc5b8698b3a9bf4b9eb10cb53369729939f88bf650167588b/accelerate-1.10.0.tar.gz", hash = "sha256:8270568fda9036b5cccdc09703fef47872abccd56eb5f6d53b54ea5fb7581496", size = 392261, upload-time = "2025-08-07T10:54:51.664Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/dd/0107f0aa179869ee9f47ef5a2686abd5e022fdc82af901d535e52fe91ce1/accelerate-1.10.0-py3-none-any.whl", hash = "sha256:260a72b560e100e839b517a331ec85ed495b3889d12886e79d1913071993c5a3", size = 374718, upload-time = "2025-08-07T10:54:49.988Z" },
-]
-
-[[package]]
 name = "aiofiles"
 version = "24.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -535,22 +517,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/fa/6d96a0978d19e17b68d634497769987b16c8f4cd0a7a05048bec693caa6b/decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360", size = 56711, upload-time = "2025-02-24T04:41:34.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a", size = 9190, upload-time = "2025-02-24T04:41:32.565Z" },
-]
-
-[[package]]
-name = "distil-whisper-fastrtc"
-version = "0.1.0.post1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "accelerate" },
-    { name = "click" },
-    { name = "numpy" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/44/9e/ffc49c654c0a8baa1eb345816c4a1b515fab09329242cc1cffd7386b2a85/distil_whisper_fastrtc-0.1.0.post1.tar.gz", hash = "sha256:03397d6404c530f6f086a9b2fc751a4d42f0c0427fa6ac78cc80dfc7113963b9", size = 6936, upload-time = "2025-03-10T18:03:14.253Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/a9/6a15945ba1cfbc2801dedbd2765aba301938324aa733e5fda0e734cb6ae3/distil_whisper_fastrtc-0.1.0.post1-py3-none-any.whl", hash = "sha256:619f14ee4e1376ebd63477f07333050320bc2f982afeb4bcc5f071932b38cf13", size = 6722, upload-time = "2025-03-10T18:03:12.949Z" },
 ]
 
 [[package]]
@@ -1878,21 +1844,6 @@ wheels = [
 ]
 
 [[package]]
-name = "psutil"
-version = "7.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2a/80/336820c1ad9286a4ded7e845b2eccfcb27851ab8ac6abece774a6ff4d3de/psutil-7.0.0.tar.gz", hash = "sha256:7be9c3eba38beccb6495ea33afd982a44074b78f28c434a1f51cc07fd315c456", size = 497003, upload-time = "2025-02-13T21:54:07.946Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/e6/2d26234410f8b8abdbf891c9da62bee396583f713fb9f3325a4760875d22/psutil-7.0.0-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:101d71dc322e3cffd7cea0650b09b3d08b8e7c4109dd6809fe452dfd00e58b25", size = 238051, upload-time = "2025-02-13T21:54:12.36Z" },
-    { url = "https://files.pythonhosted.org/packages/04/8b/30f930733afe425e3cbfc0e1468a30a18942350c1a8816acfade80c005c4/psutil-7.0.0-cp36-abi3-macosx_11_0_arm64.whl", hash = "sha256:39db632f6bb862eeccf56660871433e111b6ea58f2caea825571951d4b6aa3da", size = 239535, upload-time = "2025-02-13T21:54:16.07Z" },
-    { url = "https://files.pythonhosted.org/packages/2a/ed/d362e84620dd22876b55389248e522338ed1bf134a5edd3b8231d7207f6d/psutil-7.0.0-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1fcee592b4c6f146991ca55919ea3d1f8926497a713ed7faaf8225e174581e91", size = 275004, upload-time = "2025-02-13T21:54:18.662Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/b9/b0eb3f3cbcb734d930fdf839431606844a825b23eaf9a6ab371edac8162c/psutil-7.0.0-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4b1388a4f6875d7e2aff5c4ca1cc16c545ed41dd8bb596cefea80111db353a34", size = 277986, upload-time = "2025-02-13T21:54:21.811Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/a2/709e0fe2f093556c17fbafda93ac032257242cabcc7ff3369e2cb76a97aa/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a5f098451abc2828f7dc6b58d44b532b22f2088f4999a937557b603ce72b1993", size = 279544, upload-time = "2025-02-13T21:54:24.68Z" },
-    { url = "https://files.pythonhosted.org/packages/50/e6/eecf58810b9d12e6427369784efe814a1eec0f492084ce8eb8f4d89d6d61/psutil-7.0.0-cp37-abi3-win32.whl", hash = "sha256:ba3fcef7523064a6c9da440fc4d6bd07da93ac726b5733c29027d7dc95b39d99", size = 241053, upload-time = "2025-02-13T21:54:34.31Z" },
-    { url = "https://files.pythonhosted.org/packages/50/1b/6921afe68c74868b4c9fa424dad3be35b095e16687989ebbb50ce4fceb7c/psutil-7.0.0-cp37-abi3-win_amd64.whl", hash = "sha256:4cf3d4eb1aa9b348dec30105c55cd9b7d4629285735a102beb4441e38db90553", size = 244885, upload-time = "2025-02-13T21:54:37.486Z" },
-]
-
-[[package]]
 name = "pycparser"
 version = "2.22"
 source = { registry = "https://pypi.org/simple" }
@@ -2818,7 +2769,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "4.55.1"
+version = "4.55.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -2832,9 +2783,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/f4/5227c3275b3ea92df639a763d819ade8726d6a23fe6b1f497d989ebd8931/transformers-4.55.1.tar.gz", hash = "sha256:0de83246bdc4abdff6475302cd2fbd19f1c9f7ae7c1d7ec580e06df2f0ae93aa", size = 9571228, upload-time = "2025-08-13T08:57:32.357Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/a7/f8ef0b1caa022e085a31cd01bc705fb9194558f8a35a5107b3ee5cb640ed/transformers-4.55.3.tar.gz", hash = "sha256:31dca715549f56cb1b591a933d2caf534f948705191e809234a52a2df407c98f", size = 9572448, upload-time = "2025-08-21T09:23:01.46Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/a2/5b840892d7ec3b91d2bc57f503ee91cb37d6d4d0b1720ccbe661f35b48db/transformers-4.55.1-py3-none-any.whl", hash = "sha256:9e936d9c106924579f509f63da66aa899401e2d1fb4a4f964a3c494476b5110f", size = 11269726, upload-time = "2025-08-13T08:57:25.19Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/be/79ef53e6a65795b40bfc2d11fa54a16abcb173f069e32005b8092c5d5c19/transformers-4.55.3-py3-none-any.whl", hash = "sha256:c85e7feace634541e23b3e34d28aa9492d67974b733237ade9eba7c57c0fd1bd", size = 11269669, upload-time = "2025-08-21T09:22:57.535Z" },
 ]
 
 [[package]]
@@ -2977,7 +2928,6 @@ name = "vor-web"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "distil-whisper-fastrtc" },
     { name = "fastapi", extra = ["standard"] },
     { name = "faster-whisper" },
     { name = "fastrtc", extra = ["stt", "tts", "vad"] },
@@ -2986,11 +2936,11 @@ dependencies = [
     { name = "ollama" },
     { name = "pip" },
     { name = "torchaudio" },
+    { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "distil-whisper-fastrtc", specifier = ">=0.1.0.post1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
     { name = "faster-whisper", specifier = ">=1.2.0" },
     { name = "fastrtc", extras = ["stt", "tts", "vad"], specifier = ">=0.0.30" },
@@ -2999,6 +2949,7 @@ requires-dist = [
     { name = "ollama", specifier = ">=0.5.3" },
     { name = "pip", specifier = ">=25.2" },
     { name = "torchaudio", specifier = ">=2.8.0" },
+    { name = "transformers", specifier = ">=4.55.3" },
 ]
 
 [[package]]
