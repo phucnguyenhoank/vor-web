@@ -52,7 +52,7 @@ curr_dir = Path(__file__).parent
 
 tts_model = get_tts_model()
 stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional vietnamese
-vstt_model = VitsTTSModel()
+vtts_model = VitsTTSModel()
 
 import re  # Add this import for regex cleaning
 
@@ -81,7 +81,7 @@ def response(
         if current_response:
             response_text = current_response
             is_speaking = True
-            for i, chunk in enumerate(vstt_model.stream_tts_sync(clean_for_tts(response_text))):
+            for i, chunk in enumerate(vtts_model.stream_tts_sync(clean_for_tts(response_text))):
                 yield chunk
             is_speaking = False
         return  # End after restart
@@ -97,7 +97,7 @@ def response(
     current_response = response_text  # Cache for potential restarts
 
     is_speaking = True
-    for i, chunk in enumerate(vstt_model.stream_tts_sync(clean_for_tts(response_text))):
+    for i, chunk in enumerate(vtts_model.stream_tts_sync(clean_for_tts(response_text))):
         yield chunk
     is_speaking = False
 

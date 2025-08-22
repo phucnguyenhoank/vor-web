@@ -44,6 +44,8 @@ from ollama import chat
 from localstt import get_stt_model
 from function_descriptions import *
 from order_functions import *
+from HumAwareVad.humaware_vad import HumAwareVADModel
+from localtts import VitsTTSModel
 
 available_tools = {
     "get_menu": get_menu,
@@ -112,7 +114,7 @@ curr_dir = Path(__file__).parent
 
 tts_model = get_tts_model()
 stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional vietnamese
-
+vtts_model = VitsTTSModel()
 
 def clean_for_tts(text: str) -> str:
     # Remove '*'
@@ -135,6 +137,50 @@ def clean_for_tts(text: str) -> str:
 
     return cleaned
 
+import re
+
+def vclean_for_tts(text: str) -> str:
+    # Remove '*'
+    cleaned = text.replace("*", "")
+
+    # --- Handle money ---
+    def money_to_speech(match):
+        amount = match.group(1)
+        if "." in amount:
+            dollars, cents = amount.split(".")
+            dollars = int(dollars)
+            cents = int(cents)
+            if dollars == 0:   # like 0.99$
+                return f"{cents} cen"
+            if cents == 0:     # like 12.00$
+                return f"{dollars} đô"
+            return f"{dollars} đô {cents} cen"
+        else:
+            return f"{int(amount)} đô"
+
+    # Convert number$ → "x đô y cen"
+    cleaned = re.sub(r"([0-9]+(?:\.[0-9]+)?)\$", money_to_speech, cleaned)
+
+    # --- English → Vietnamese food mapping ---
+    FOOD_TRANSLATION = {
+        "burger": "bánh bơ gơ",
+        "sandwich": "bánh san quít",
+        "sides": "món ăn kèm",
+        "drinks": "nước uống",
+        "fries": "khoai tây chiên",
+        "chicken": "gà rán",
+        "salad": "xà lách",
+        "coffee": "cà phê",
+        "tea": "trà",
+        "soda": "nước ngọt",
+    }
+
+    for en, vi in FOOD_TRANSLATION.items():
+        cleaned = re.sub(rf"\b{en}\b", vi, cleaned, flags=re.IGNORECASE)
+
+    return cleaned
+
+
 def startup():
     for chunk in tts_model.stream_tts_sync(greeting_prompt):
         yield chunk
@@ -151,6 +197,23 @@ def print_content(message):
     role = message["role"]
     content = message["content"]
     print(f"{role}> {content}")
+
+def detect_language(text: str) -> str:
+    """Decide if a string is English or Vietnamese."""
+    # Vietnamese-specific characters
+    vietnamese_chars = "ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệóòỏõọốồổỗộớờởỡợúùủũụứừửữựíìỉĩịýỳỷỹỵ"
+    
+    if any(ch in text.lower() for ch in vietnamese_chars):
+        return "vi"
+    
+    # Common Vietnamese words (expandable list)
+    vietnamese_words = {"và", "của", "nhưng", "không", "tôi", "bạn", "chúng", "đây", "kia"}
+    words = set(re.findall(r"\w+", text.lower()))
+    if words & vietnamese_words:
+        return "vi"
+    
+    # Fallback → assume English
+    return "en"
 
 def safe_parse_arguments(arguments: dict) -> dict:
     """
@@ -198,12 +261,18 @@ def response(
     # Check noise
     word_count = len(prompt.strip().split())
     if word_count == 0 or is_speaking and word_count <= 2:
-        print(f'ignored_noise>{prompt} ({word_count} words)')
+        print(f'ignored_noise: [{prompt}] ({word_count} words)')
         # Restart talking the current response instead of stopping
         if current_response:
             is_speaking = True
-            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-                yield chunk
+            if detect_language(current_response) == "en":
+                print('detect en')
+                for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+                    yield chunk
+            else:
+                print('detect vi')
+                for i, chunk in enumerate(vtts_model.stream_tts_sync(vclean_for_tts(current_response))):
+                    yield chunk
             is_speaking = False
         return  # End after restart
 
@@ -240,8 +309,14 @@ def response(
         print_content(followup["message"])
         current_response = followup["message"]["content"]
         is_speaking = True
-        for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-            yield chunk
+        if detect_language(current_response) == "en":
+            print('detect en')
+            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+                yield chunk
+        else:
+            print('detect vi')
+            for i, chunk in enumerate(vtts_model.stream_tts_sync(vclean_for_tts(current_response))):
+                yield chunk
         is_speaking = False
         messages.append(followup["message"])
     else:
@@ -253,23 +328,12 @@ def response(
         is_speaking = False
         messages.append(message)
         
-THRESHOLD = 0.7
 stream = Stream(
     modality="audio",
     mode="send-receive",
     handler=ReplyOnPause(
-        response,# Algorithm-level options (how you collect / decide on chunks)
-        algo_options=AlgoOptions(
-            audio_chunk_duration=THRESHOLD,        # collect 0.6s per internal chunk (bigger => more context)
-            started_talking_threshold=THRESHOLD - 0.1,   # that must be speech to mark "start"
-            speech_threshold=0.1             # lower => more sensitive to soft speech
-        ),
-        # Model-level VAD (Silero) options (controls sensitivity / min durations)
-        model_options=SileroVadOptions(
-            threshold=0.9,                   # VAD decision threshold (lower => more sensitive)
-            min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
-            min_silence_duration_ms=250      # silence required to consider speech ended
-        ),
+        response,
+        model=HumAwareVADModel(),
         startup_fn=startup
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
