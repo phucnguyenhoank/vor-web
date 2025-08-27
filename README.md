@@ -26,10 +26,11 @@ You need the following models inside the `vor-web` folder:
 * [`faster-whisper-large-v3`](https://huggingface.co/Systran/faster-whisper-large-v3)
 * [`HumAwareVad`](https://github.com/CuriousMonkey7/HumAwareVad)
 
+Since I already changed the original HumAwareVad code to make it more suited to my project, it was included in this repository and you only need to download the other one.
+
 ```bash
 git lfs install
 git clone https://huggingface.co/Systran/faster-whisper-large-v3
-git clone https://github.com/CuriousMonkey7/HumAwareVad.git
 ```
 
 ## Run
