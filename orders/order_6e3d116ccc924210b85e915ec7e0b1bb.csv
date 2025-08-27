@@ -1,0 +1,2 @@
+order_id,created_at,item_id,item_name,quantity,price_per_item,discount_pct,line_total,line_discount,line_after_discount
+6e3d116ccc924210b85e915ec7e0b1bb,2025-08-27T10:24:53.666884,5,Orange Juice,1,1.99,0.2,1.99,0.4,1.59

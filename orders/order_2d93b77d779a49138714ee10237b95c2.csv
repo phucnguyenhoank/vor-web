@@ -1,4 +1,0 @@
-order_id,created_at,item_id,item_name,quantity,price_per_item,discount_pct,line_total,line_discount,line_after_discount
-2d93b77d779a49138714ee10237b95c2,2025-08-22T18:06:12.266774,1,Cheeseburger,2,5.99,0.0,11.98,0.0,11.98
-2d93b77d779a49138714ee10237b95c2,2025-08-22T18:06:12.266774,2,Veggie Burger,1,5.49,0.1,5.49,0.55,4.94
-2d93b77d779a49138714ee10237b95c2,2025-08-22T18:06:12.266774,5,Orange Juice,1,1.99,0.2,1.99,0.4,1.59

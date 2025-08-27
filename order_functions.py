@@ -23,8 +23,13 @@ class Discount(TypedDict):
     discount_percentage: float  # decimal, e.g. 0.1 for 10%
     item_ids: list[int]
 
+class Flavor(TypedDict):
+    id: int
+    name: str
+
 class MenuData(TypedDict):
     categories: list[Category]
+    flavors: list[Flavor] 
     items: list[MenuItem]
     discounts: list[Discount]
 
@@ -61,20 +66,36 @@ class TotalsResult(TypedDict):
     saved_as: str | None
 
 # ----------------------------
-# Example menu data (your original)
+# Example menu data (with flavors as categories)
 # ----------------------------
 data: MenuData = {
     "categories": [
         {"id": 1, "name": "Burgers"},
         {"id": 2, "name": "Sides"},
-        {"id": 3, "name": "Drinks"}
+        {"id": 3, "name": "Drinks"},
+        {"id": 4, "name": "Combo"}
+    ],
+    "flavors": [
+        {"id": 1, "name": "spicy"},
+        {"id": 2, "name": "savory"},
+        {"id": 3, "name": "cheesy"},
+        {"id": 4, "name": "fresh"},
+        {"id": 5, "name": "light"},
+        {"id": 6, "name": "salty"},
+        {"id": 7, "name": "crispy"},
+        {"id": 8, "name": "sweet"},
+        {"id": 9, "name": "refreshing"},
+        {"id": 10, "name": "citrusy"},
     ],
     "items": [
-        {"id": 1, "name": "Cheeseburger", "price": 5.99, "category_id": 1},
-        {"id": 2, "name": "Veggie Burger", "price": 5.49, "category_id": 1},
-        {"id": 3, "name": "French Fries", "price": 2.99, "category_id": 2},
-        {"id": 4, "name": "Coca-Cola", "price": 1.49, "category_id": 3},
-        {"id": 5, "name": "Orange Juice", "price": 1.99, "category_id": 3}
+        {"id": 1, "name": "Cheeseburger", "price": 5.99, "category_id": 1, "flavor_ids": [1, 2, 3]},
+        {"id": 2, "name": "Veggie Burger", "price": 5.49, "category_id": 1, "flavor_ids": [4, 5]},
+        {"id": 3, "name": "French Fries", "price": 2.99, "category_id": 2, "flavor_ids": [6, 7]},
+        {"id": 4, "name": "Coca-Cola", "price": 1.49, "category_id": 3, "flavor_ids": [8, 9]},
+        {"id": 5, "name": "Orange Juice", "price": 1.99, "category_id": 3, "flavor_ids": [8, 10, 4]},
+        {"id": 6, "name": "Combo: Cheeseburger and Orange Juice", "price": 6.99, "category_id": 4, "flavor_ids": [2, 3, 8, 10]},
+        {"id": 7, "name": "Combo: Cheeseburger and French Fries", "price": 7.99, "category_id": 4, "flavor_ids": [2, 3, 6, 7]},
+        {"id": 8, "name": "Spicy Chicken Burger", "price": 6.49, "category_id": 1, "flavor_ids": [1, 2]},
     ],
     "discounts": [
         {"discount_percentage": 0.10, "item_ids": [2, 4]},
@@ -83,6 +104,7 @@ data: MenuData = {
     ]
 }
 MENU_DATA = data
+
 
 # ----------------------------
 # Helpers & global cart
@@ -97,34 +119,104 @@ def _get_item_discount(item_id: int) -> float:
     """Return discount as decimal, e.g. 0.1 for 10%."""
     return next((d["discount_percentage"] for d in data["discounts"] if item_id in d["item_ids"]), 0.0)
 
+def get_combos_for_item(item_name: str) -> dict[str, Any]:
+    """
+    Suggest combos that include the requested menu item name.
+
+    Input:
+      item_name: The name of the menu item (case-insensitive).
+        Example: "Cheeseburger" → will return all combos that contain "Cheeseburger".
+
+    Output:
+      {
+        "requested_item": "Cheeseburger",
+        "matched_combos": [
+            {"id": 6, "name": "Combo: Cheeseburger and Orange Juice", "price": 6.99},
+            {"id": 7, "name": "Combo: Cheeseburger and French Fries", "price": 7.99}
+        ]
+      }
+
+      If no combos are found, matched_combos will be an empty list.
+    """
+    if not item_name or not isinstance(item_name, str):
+        return {"error": "Invalid item_name provided."}
+
+    # find all menu items that match the name (case-insensitive)
+    target_items = [i for i in data["items"] if item_name.lower() in i["name"].lower()]
+
+    if not target_items:
+        return {"requested_item": item_name, "matched_combos": []}
+
+    # find combos that contain the target item(s) in their name
+    matched_combos = []
+    for item in data["items"]:
+        if item["category_id"] == 4:  # category "Combo"
+            for target in target_items:
+                if target["name"].lower() in item["name"].lower():
+                    matched_combos.append({
+                        "id": item["id"],
+                        "name": item["name"],
+                        "price": item["price"]
+                    })
+                    break  # prevent duplicate matches
+
+    return {"requested_item": item_name, "matched_combos": matched_combos}
+
 # ----------------------------
 # Public functions with modern-type hints
 # ----------------------------
-def get_menu(category_ids: list[int] | None = None) -> MenuData:
+def get_menu(category_ids: list[int] | None = None, flavor_ids: list[int] | None = None) -> MenuData:
     """
-    Return the menu. If category_ids is provided, return the filtered menu
-    only containing those categories, their items, and applicable discounts.
+    Return the menu filtered by optional category_ids and/or flavor_ids.
 
-    Input:
-    category_ids: Optional[List[int]];
-    Here is the full list of categories with their IDs:
-    [
-        {"id": 1, "name": "Burgers"},
-        {"id": 2, "name": "Sides"},
-        {"id": 3, "name": "Drinks"}
-    ]
+    INPUTS
+      - category_ids: Optional[list[int]]
+          IDs to include (1: Burgers, 2: Sides, 3: Drinks, 4: Combo)
+      - flavor_ids: Optional[list[int]]
+          Flavor IDs to filter (OR match). Flavors: 1:spicy, 2:savory, 3:cheesy,
+          4:fresh, 5:light, 6:salty, 7:crispy, 8:sweet, 9:refreshing, 10:citrusy
 
-    Output:
-      MenuData (dict with categories, items, discounts)
+    BEHAVIOR
+      - No filters → returns full menu.
+      - category_ids → only those categories and their items are returned.
+      - flavor_ids → keep items that have at least one requested flavor.
+      - Discounts and flavors are trimmed to match the returned items.
+
+    OUTPUT
+      dict with keys: "categories", "flavors", "items", "discounts" (same shapes as MENU_DATA).
+
+    EXAMPLES
+      get_menu()                              # full menu
+      get_menu(category_ids=[1,3])            # Burgers + Drinks
+      get_menu(flavor_ids=[1,3])              # items that are spicy OR cheesy
+      get_menu(category_ids=[4], flavor_ids=[2,3])  # combos that are savory or cheesy
     """
-    if not category_ids:
+    # If no filters, return full data
+    if not category_ids and not flavor_ids:
         return data
 
-    filtered_categories = [cat for cat in data["categories"] if cat["id"] in category_ids]
-    filtered_category_ids = {cat["id"] for cat in filtered_categories}
-    filtered_items = [item for item in data["items"] if item["category_id"] in filtered_category_ids]
-    filtered_item_ids = {item["id"] for item in filtered_items}
+    # Category filtering (if provided)
+    if category_ids:
+        filtered_categories = [cat for cat in data["categories"] if cat["id"] in category_ids]
+        allowed_category_ids = {cat["id"] for cat in filtered_categories}
+    else:
+        filtered_categories = data["categories"]
+        allowed_category_ids = {cat["id"] for cat in filtered_categories}
 
+    # Start with items in allowed categories
+    filtered_items = [it for it in data["items"] if it["category_id"] in allowed_category_ids]
+
+    # Apply flavor filtering if requested (OR semantics: item has at least one requested flavor)
+    if flavor_ids:
+        requested = set(flavor_ids)
+        filtered_items = [
+            it for it in filtered_items
+            if bool(set(it.get("flavor_ids", [])) & requested)
+        ]
+
+    filtered_item_ids = {it["id"] for it in filtered_items}
+
+    # Filter discounts to only include remaining items
     filtered_discounts: list[Discount] = []
     for disc in data["discounts"]:
         valid_item_ids = [iid for iid in disc["item_ids"] if iid in filtered_item_ids]
@@ -134,8 +226,18 @@ def get_menu(category_ids: list[int] | None = None) -> MenuData:
                 "item_ids": valid_item_ids
             })
 
+    # Return flavors referenced by returned items (trimmed), or full list if no filters used
+    if not (category_ids or flavor_ids):
+        returned_flavors = data.get("flavors", [])
+    else:
+        used_flavor_ids: set[int] = set()
+        for it in filtered_items:
+            used_flavor_ids.update(it.get("flavor_ids", []))
+        returned_flavors = [f for f in data.get("flavors", []) if f["id"] in used_flavor_ids]
+
     return {
         "categories": filtered_categories,
+        "flavors": returned_flavors,
         "items": filtered_items,
         "discounts": filtered_discounts
     }
@@ -287,6 +389,9 @@ def preview_order() -> TotalsResult:
     Returns a dict with order_details, subtotal, discounts_applied, total_price, current_customer_order
     """
     global customer_order
+
+    if not customer_order:
+        return {"error": "Customer order is empty. Add some items first."}
 
     subtotal = 0.0
     total = 0.0
