@@ -187,22 +187,58 @@ def startup():
     for chunk in tts_model.stream_tts_sync(greeting_prompt):
         yield chunk
 
-def response(
-    audio: tuple[int, np.ndarray],
-):
-    print('Got it')
+
+def is_complete_sentence(text: str) -> bool:
+    """Check if text is a complete sentence ending with '.', '?' or '!' but not part of a number."""
+    text = text.strip()
+    if not text.endswith((".", "?", "!")):
+        return False
+    # Reject if the period is part of a number (e.g., '1.49' or '1.')
+    # A period is part of a number if preceded by a digit and followed by a digit or nothing
+    if text.endswith("."):
+        # Check the last few characters to ensure the period isn't part of a number
+        # Use regex to find the last period and its context
+        last_period_index = text.rfind(".")
+        if last_period_index > 0:
+            before_char = text[last_period_index - 1] if last_period_index > 0 else ""
+            after_char = text[last_period_index + 1] if last_period_index + 1 < len(text) else ""
+            # If the period is preceded by a digit and followed by a digit or nothing, it might be part of a number
+            if before_char.isdigit():
+                if after_char.isdigit() or not after_char:
+                    # Check if the period is part of a valid number (e.g., '1.49' or '1.')
+                    # Use regex to match the last number-like pattern before the period
+                    number_pattern = re.search(r"\d+\.\d*$|\d+\.$", text)
+                    if number_pattern and number_pattern.end() == len(text):
+                        return False
+    return True
+
+def flush_buffer(buffer: str, buffer_list: list[str], tts_model, clean_for_tts):
+    """Clean and convert a finished sentence to audio chunks, then add to buffer_list"""
+    raw = buffer.strip()
+    clean = raw.replace("*", "")
+    print(f"Raw:   {raw}")
+    print(f"Speak: {clean}")
+    buffer_list.append(clean)
+    for chunk in tts_model.stream_tts_sync(clean_for_tts(clean)):
+        yield chunk
+    return ""  # reset buffer
+
+def response(audio: tuple[int, np.ndarray]):
+    """Streamed response function for processing audio input and generating TTS output"""
     global is_speaking, current_response, messages
+    print('Got it')
+    
     # Transcribe audio using stt_model (handles 48 kHz, int16, shape=(1, N))
     prompt = stt_model.stt(audio)
 
     # Check noise
     word_count = len(prompt.strip().split())
-    if word_count == 0: # or is_speaking and word_count <= 2:
+    if word_count == 0:  # or is_speaking and word_count <= 2:
         print(f'ignored_noise: [{prompt}] ({word_count} words)')
         # Restart talking the current response instead of stopping
         if current_response:
             is_speaking = True
-            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+            for chunk in tts_model.stream_tts_sync(clean_for_tts(current_response)):
                 yield chunk
             is_speaking = False
         return  # End after restart
@@ -210,13 +246,38 @@ def response(
     print(f'user>{prompt}')
     messages.append({"role": "user", "content": prompt})
 
-    resp = chat(model=LLM_NAME, messages=messages, tools=tool_list)
+    # Initialize streaming chat
+    stream = chat(model=LLM_NAME, messages=messages, tools=tool_list, stream=True)
 
-    message = resp["message"]
-    print(json.dumps(message.model_dump(), indent=4))
-    if message.get("tool_calls"):
-        tool_calls = message["tool_calls"]
-        messages.append(message) # Append assistant's message with tool calls
+    buffer = ""
+    buffer_list = []
+    tool_calls = []
+    assistant_message = {"role": "assistant", "content": ""}
+
+    for chunk in stream:
+        content = chunk.message.get("content", "")
+        if content:
+            buffer += content
+            assistant_message["content"] += content
+            if is_complete_sentence(buffer):
+                buffer = yield from flush_buffer(buffer, buffer_list, tts_model, clean_for_tts)
+
+        # Check for tool calls in the chunk
+        if chunk.message.get("tool_calls"):
+            tool_calls.extend(chunk.message["tool_calls"])
+
+    # Flush any remaining buffer content
+    if buffer.strip():
+        buffer = yield from flush_buffer(buffer, buffer_list, tts_model, clean_for_tts)
+        assistant_message["content"] = "".join(buffer_list)
+
+    # Update current_response
+    current_response = assistant_message["content"]
+
+    # Handle tool calls if any
+    if tool_calls:
+        assistant_message["tool_calls"] = tool_calls
+        messages.append(assistant_message)
 
         for tool_call in tool_calls:
             function_name = tool_call["function"]["name"]
@@ -235,23 +296,36 @@ def response(
                 "content": json.dumps(tool_result, ensure_ascii=False)
             })
 
-        followup = chat(model=LLM_NAME, messages=messages, tools=tool_list)
-        print(json.dumps(followup["message"].model_dump(), indent=4))
-        print_content(followup["message"])
-        current_response = followup["message"]["content"]
+        # Follow-up streaming chat for tool results
+        followup_stream = chat(model=LLM_NAME, messages=messages, tools=tool_list, stream=True)
+        buffer = ""
+        buffer_list = []
+        followup_message = {"role": "assistant", "content": ""}
+
+        for chunk in followup_stream:
+            content = chunk.message.get("content", "")
+            if content:
+                buffer += content
+                followup_message["content"] += content
+                if is_complete_sentence(buffer):
+                    buffer = yield from flush_buffer(buffer, buffer_list, tts_model, clean_for_tts)
+
+        # Flush any remaining buffer content
+        if buffer.strip():
+            buffer = yield from flush_buffer(buffer, buffer_list, tts_model, clean_for_tts)
+            followup_message["content"] = "".join(buffer_list)
+
+        print_content(followup_message)
+        current_response = followup_message["content"]
         is_speaking = True
-        for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-            yield chunk
-        is_speaking = False
-        messages.append(followup["message"])
+        messages.append(followup_message)
     else:
-        print_content(message)
-        current_response = message["content"]
+        print_content(assistant_message)
         is_speaking = True
-        for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-            yield chunk
-        is_speaking = False
-        messages.append(message)
+        messages.append(assistant_message)
+
+    is_speaking = False
+    print("\n--- Response Finished ---")
 
 THRESHOLD = 0.4
 stream = Stream(
