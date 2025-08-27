@@ -1,2 +1,0 @@
-order_id,created_at,item_id,item_name,quantity,price_per_item,discount_pct,line_total,line_discount,line_after_discount
-49f59808944a4cce81afe76c4120dfd7,2025-08-27T09:58:12.069921,6,Combo: Cheeseburger and Orange Juice,1,6.99,0.0,6.99,0.0,6.99

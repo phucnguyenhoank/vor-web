@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "deep-translator>=1.11.4",
     "fastapi[standard]>=0.116.1",
     "faster-whisper>=1.2.0",
     "fastrtc[stt,tts,vad]>=0.0.30",

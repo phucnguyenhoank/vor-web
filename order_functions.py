@@ -66,7 +66,7 @@ class TotalsResult(TypedDict):
     saved_as: str | None
 
 # ----------------------------
-# Example menu data (with flavors as categories)
+# Menu data
 # ----------------------------
 data: MenuData = {
     "categories": [
@@ -105,7 +105,6 @@ data: MenuData = {
 }
 MENU_DATA = data
 
-
 # ----------------------------
 # Helpers & global cart
 # ----------------------------
@@ -118,49 +117,6 @@ def _get_item(item_id: int) -> MenuItem:
 def _get_item_discount(item_id: int) -> float:
     """Return discount as decimal, e.g. 0.1 for 10%."""
     return next((d["discount_percentage"] for d in data["discounts"] if item_id in d["item_ids"]), 0.0)
-
-def get_combos_for_item(item_name: str) -> dict[str, Any]:
-    """
-    Suggest combos that include the requested menu item name.
-
-    Input:
-      item_name: The name of the menu item (case-insensitive).
-        Example: "Cheeseburger" → will return all combos that contain "Cheeseburger".
-
-    Output:
-      {
-        "requested_item": "Cheeseburger",
-        "matched_combos": [
-            {"id": 6, "name": "Combo: Cheeseburger and Orange Juice", "price": 6.99},
-            {"id": 7, "name": "Combo: Cheeseburger and French Fries", "price": 7.99}
-        ]
-      }
-
-      If no combos are found, matched_combos will be an empty list.
-    """
-    if not item_name or not isinstance(item_name, str):
-        return {"error": "Invalid item_name provided."}
-
-    # find all menu items that match the name (case-insensitive)
-    target_items = [i for i in data["items"] if item_name.lower() in i["name"].lower()]
-
-    if not target_items:
-        return {"requested_item": item_name, "matched_combos": []}
-
-    # find combos that contain the target item(s) in their name
-    matched_combos = []
-    for item in data["items"]:
-        if item["category_id"] == 4:  # category "Combo"
-            for target in target_items:
-                if target["name"].lower() in item["name"].lower():
-                    matched_combos.append({
-                        "id": item["id"],
-                        "name": item["name"],
-                        "price": item["price"]
-                    })
-                    break  # prevent duplicate matches
-
-    return {"requested_item": item_name, "matched_combos": matched_combos}
 
 # ----------------------------
 # Public functions with modern-type hints
@@ -381,7 +337,6 @@ def replace_order_item(old_item_id: int, new_item_id: int, new_quantity: int) ->
         "error": f"Item with id {old_item_id} not found.",
         "current_customer_order": customer_order.copy()
     }
-
 
 def preview_order() -> TotalsResult:
     """

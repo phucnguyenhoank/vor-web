@@ -35,7 +35,7 @@ class LocalFasterWhisperSTT(STTModel):
         audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=16000)
 
         # Transcribe with faster-whisper using automatic language detection
-        segments, _ = self.model.transcribe(audio_np, beam_size=5, language=None)
+        segments, _ = self.model.transcribe(audio_np, beam_size=5, language="en")
         return " ".join(seg.text for seg in segments)
 
 @lru_cache

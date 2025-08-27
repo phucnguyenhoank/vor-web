@@ -1,4 +1,4 @@
-# -----------SSL--------------------
+# -----------SSL (Optional)--------------------
 import ssl
 import urllib3
 import requests.sessions
@@ -27,7 +27,6 @@ import time
 import re
 from pathlib import Path
 import numpy as np
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastrtc import (
@@ -45,7 +44,6 @@ from localstt import get_stt_model
 from function_descriptions import *
 from order_functions import *
 from HumAwareVad.humaware_vad import HumAwareVADModel
-from localtts import VitsTTSModel
 
 available_tools = {
     "get_menu": get_menu,
@@ -56,6 +54,16 @@ available_tools = {
     "preview_order": preview_order,
     "create_order": create_order
 }
+
+tool_list = [
+    get_menu,
+    increase_order_items,
+    remove_order_items,
+    set_order_items,
+    replace_order_item,
+    preview_order,
+    create_order
+]
 
 system_prompt = f"""
 You are a drive-thru staff member at a fast-food restaurant. Suggest foods, related items, and combos based on customer needs.
@@ -73,7 +81,7 @@ Your goals:
    - Call remove_order_items when the customer changes their mind or removes items.
    - Call create_order when the customer confirms the order is complete to finalize the order, even if the customer 
      does not explicitly say "create order". Instead, listen for natural 
-     signals like: "That's all", "I'm done", "That's it", or when the 
+     signals like: "Yes", "That's all", "I'm done", "That's it", or when the 
      customer confirms the order is complete.
    - Call preview_order only to check what's currently in the customer's cart or to show the price of their order so far.
 3. Always confirm the final order with the customer before creating it. 
@@ -109,16 +117,20 @@ Remember: you are the staff, not the system. Always be polite, clear,
 and helpful like a real fast-food employee at a drive-thru.
 """
 
+greeting_prompt = "Welcome! What would you like to eat today?"
 
+is_speaking = False
+current_response = ""
+messages = [
+    {"role": "system", "content": system_prompt},
+    {"role": "assistant", "content": greeting_prompt}
+]
+LLM_NAME =  "llama3.1:8b-instruct-q8_0" # "llama3.2:3b-instruct-fp16"
 
-greeting_prompt = "Welcome! Thanks for choosing us — what would you like to eat today?"
-
-load_dotenv()
 curr_dir = Path(__file__).parent
 
 tts_model = get_tts_model()
-stt_model = get_stt_model("faster-whisper-large-v3", device="auto") # optional vietnamese
-vtts_model = VitsTTSModel()
+stt_model = get_stt_model("faster-whisper-large-v3", device="auto")
 
 def clean_for_tts(text: str) -> str:
     # Remove '*'
@@ -141,91 +153,10 @@ def clean_for_tts(text: str) -> str:
 
     return cleaned
 
-import re
-
-def vclean_for_tts(text: str) -> str:
-    # Remove '*'
-    cleaned = text.replace("*", "")
-
-    # --- Normalize numbers with comma decimal separator ---
-    # Ví dụ: 1,59 → 1.59
-    cleaned = re.sub(r"(\d),(\d+)", r"\1.\2", cleaned)
-
-    # --- Handle money ---
-    def money_to_speech(match):
-        amount = match.group(1)
-        if "." in amount:
-            dollars, cents = amount.split(".")
-            dollars = int(dollars)
-            cents = int(cents)
-            if dollars == 0:   # like 0.99$
-                return f"{cents} cen"
-            if cents == 0:     # like 12.00$
-                return f"{dollars} đô"
-            return f"{dollars} đô {cents} cen"
-        else:
-            return f"{int(amount)} đô"
-
-    # Convert number + đơn vị tiền
-    # Bắt các dạng: "5.99$", "5.99 đô la", "5.99 đô", "5.99USD"
-    cleaned = re.sub(
-        r"([0-9]+(?:\.[0-9]+)?)\s*(?:\$|USD|đô la|đô)",
-        money_to_speech,
-        cleaned,
-        flags=re.IGNORECASE
-    )
-
-    # --- English → Vietnamese food mapping ---
-    FOOD_TRANSLATION = {
-        "Burgers": "Bánh bơ gơ",
-        "Combo": "Côm bô",
-        "Cheeseburger": "Bánh bơ gơ phô mai",
-        "Veggie Burger": "Bánh bơ gơ rau củ",
-        "French Fries": "Khoai tây chiên",
-        "Coca-Cola": "Cô-ca",
-        "Orange Juice": "Nước cam",
-        "Spicy Chicken Burger": "Bánh bơ gơ gà cay",
-    }
-
-    for en, vi in FOOD_TRANSLATION.items():
-        cleaned = re.sub(rf"\b{en}\b", vi, cleaned, flags=re.IGNORECASE)
-
-    return cleaned
-
-
-def startup():
-    for chunk in tts_model.stream_tts_sync(greeting_prompt):
-        yield chunk
-
-is_speaking = False
-current_response = ""
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "assistant", "content": greeting_prompt}
-]
-LLM_NAME = "llama3.1:8b-instruct-q8_0" # "mistral-nemo:latest" # "llama3.1:8b" # "llama3.2:1b"
-
 def print_content(message):
     role = message["role"]
     content = message["content"]
     print(f"{role}> {content}")
-
-def detect_language(text: str) -> str:
-    """Decide if a string is English or Vietnamese."""
-    # Vietnamese-specific characters
-    vietnamese_chars = "ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệóòỏõọốồổỗộớờởỡợúùủũụứừửữựíìỉĩịýỳỷỹỵ"
-    
-    if any(ch in text.lower() for ch in vietnamese_chars):
-        return "vi"
-    
-    # Common Vietnamese words (expandable list)
-    vietnamese_words = {"và", "của", "nhưng", "không", "tôi", "bạn", "chúng", "đây", "kia"}
-    words = set(re.findall(r"\w+", text.lower()))
-    if words & vietnamese_words:
-        return "vi"
-    
-    # Fallback → assume English
-    return "en"
 
 def safe_parse_arguments(arguments: dict) -> dict:
     """
@@ -252,15 +183,9 @@ def safe_parse_arguments(arguments: dict) -> dict:
 
     return {k: try_parse(v) for k, v in arguments.items()}
 
-tool_list = [
-    get_menu,
-    increase_order_items,
-    remove_order_items,
-    set_order_items,
-    replace_order_item,
-    preview_order,
-    create_order
-]
+def startup():
+    for chunk in tts_model.stream_tts_sync(greeting_prompt):
+        yield chunk
 
 def response(
     audio: tuple[int, np.ndarray],
@@ -272,19 +197,13 @@ def response(
 
     # Check noise
     word_count = len(prompt.strip().split())
-    if word_count == 0 or is_speaking and word_count <= 2:
+    if word_count == 0: # or is_speaking and word_count <= 2:
         print(f'ignored_noise: [{prompt}] ({word_count} words)')
         # Restart talking the current response instead of stopping
         if current_response:
             is_speaking = True
-            if detect_language(current_response) == "en":
-                print('detect en')
-                for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-                    yield chunk
-            else:
-                print('detect vi')
-                for i, chunk in enumerate(vtts_model.stream_tts_sync(vclean_for_tts(current_response))):
-                    yield chunk
+            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+                yield chunk
             is_speaking = False
         return  # End after restart
 
@@ -321,38 +240,37 @@ def response(
         print_content(followup["message"])
         current_response = followup["message"]["content"]
         is_speaking = True
-        if detect_language(current_response) == "en":
-            print('detect en')
-            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-                yield chunk
-        else:
-            print('detect vi')
-            for i, chunk in enumerate(vtts_model.stream_tts_sync(vclean_for_tts(current_response))):
-                yield chunk
+        for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+            yield chunk
         is_speaking = False
         messages.append(followup["message"])
     else:
         print_content(message)
         current_response = message["content"]
         is_speaking = True
-        if detect_language(current_response) == "en":
-            print('detect en')
-            for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
-                yield chunk
-        else:
-            print('detect vi')
-            for i, chunk in enumerate(vtts_model.stream_tts_sync(vclean_for_tts(current_response))):
-                yield chunk
+        for i, chunk in enumerate(tts_model.stream_tts_sync(clean_for_tts(current_response))):
+            yield chunk
         is_speaking = False
         messages.append(message)
-        
+
+THRESHOLD = 0.4
 stream = Stream(
     modality="audio",
     mode="send-receive",
     handler=ReplyOnPause(
         response,
-        model=HumAwareVADModel(),
-        startup_fn=startup
+        model=HumAwareVADModel(threshold=0.4), # small = more sensitive to small sounds
+        startup_fn=startup,
+        algo_options=AlgoOptions(
+            audio_chunk_duration=THRESHOLD,
+            started_talking_threshold=THRESHOLD - 0.1,
+            speech_threshold=0.1
+        ),
+        # model_options=SileroVadOptions(
+        #     threshold=0.9,                   # VAD decision threshold (lower => more sensitive)
+        #     min_speech_duration_ms=100,      # minimum speech length to consider (short words allowed)
+        #     min_silence_duration_ms=250      # silence required to consider speech ended
+        # ),
     ),
     rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
     concurrency_limit=5 if get_space() else None,
@@ -372,3 +290,4 @@ async def _():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
+
